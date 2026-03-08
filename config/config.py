@@ -1,11 +1,13 @@
 import os
 from collections import namedtuple
 
-# 获取项目根目录
+# 获取当前 config.py 所在的目录
 current = os.path.dirname(os.path.realpath(__file__))
+# 向上退一级，获取真正的项目根目录
+ROOT_DIR = os.path.dirname(current)
 
 # 运动数据文件输出路径
-OUTPUT_DIR = os.path.join(current, "outputs")
+OUTPUT_DIR = os.path.join(ROOT_DIR, "outputs")
 GPX_FOLDER = os.path.join(OUTPUT_DIR, "GPX_OUT")
 TCX_FOLDER = os.path.join(OUTPUT_DIR, "TCX_OUT")
 FIT_FOLDER = os.path.join(OUTPUT_DIR, "FIT_OUT")
@@ -17,7 +19,7 @@ FOLDER_DICT = {
 }
 
 # 同步记录文件（去重依赖），放在根目录方便 Git 提交
-KEEP2GARMIN_BK_PATH = os.path.join(current, "keep2garmin.json")
+KEEP2GARMIN_BK_PATH = os.path.join(ROOT_DIR, "keep2garmin.json")
 
 BASE_TIMEZONE = "Asia/Shanghai"
 UTC_TIMEZONE = "UTC"
