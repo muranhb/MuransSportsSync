@@ -1,9 +1,9 @@
-name: Sport Data Sync Hub
+name: Sport Sync
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 18 * * *" # UTC时间 18:00 (北京时间凌晨 2:00) 自动执行
+    - cron: "0 14,22 * * *" # UTC时间 14:00 和 22:00 (对应北京时间每天 22:00 和 早上 06:00)
 
 jobs:
   sync_keep_to_garmin:
@@ -63,6 +63,7 @@ jobs:
           git config --local user.name "GitHub Action Bot"
           
           # 只添加轻量级的 json 文件
+          touch keep2garmin.json
           git add keep2garmin.json
           
           if ! git diff --cached --quiet; then
