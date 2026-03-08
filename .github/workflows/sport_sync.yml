@@ -40,10 +40,10 @@ jobs:
           # 1. 使用官方凭证脚本获取最新的 Secret，规避 Token 过期
           echo "Authenticating with Garmin..."
           if [ "$GARMIN_IS_CN" = "true" ]; then
-            GARMIN_SECRET=$(python get_garmin_secret.py "$GARMIN_EMAIL" "$GARMIN_PASSWORD" --is-cn)
+            GARMIN_SECRET=$(python garmin/get_garmin_secret.py "$GARMIN_EMAIL" "$GARMIN_PASSWORD" --is-cn)
             GARMIN_FLAG="--is-cn"
           else
-            GARMIN_SECRET=$(python get_garmin_secret.py "$GARMIN_EMAIL" "$GARMIN_PASSWORD")
+            GARMIN_SECRET=$(python garmin/get_garmin_secret.py "$GARMIN_EMAIL" "$GARMIN_PASSWORD")
             GARMIN_FLAG=""
           fi
           
