@@ -1,49 +1,21 @@
+garth>=0.6.3
+httpx>=0.28.1
+aiofiles>=23.2.1
+lxml>=5.0.0
+
+requests>=2.31.0
+pycryptodome>=3.19.0
+eviltransform>=0.1.1
+
 gpxpy>=1.6.0
+tcxreader>=0.4.11
+fit-tool>=0.9.15
 
-httpx
-gpxpy==1.6.2
-stravalib==0.10.4
-appdirs>=1.4.0
-svgwrite>=1.1.9
-colour>=0.1.5
-s2sphere
-arrow
-geopy
-polyline
-sqlalchemy
-tzfpy; platform_system != "Windows"
-timezonefinder; platform_system == "Windows"
-pyyaml
-aiofiles
-cloudscraper==1.2.71
-tcxreader
+geopy>=2.4.1
+polyline>=2.0.0
+
+stravalib>=1.6.0
+
+pytz
 rich
-lxml
-eviltransform
-stravaweblib
-tenacity
-numpy
-tzlocal
-fit-tool
-garmin-fit-sdk
-haversine==2.8.0
-garth
-pycryptodome
-duckdb
-openai==1.88.0
-# cairosvg
-certifi==2025.1.31
-
-
-bs4
-html.parser
-aiofiles
-# if you need to import kml file
-#fastkml
-
-fitparse>=1.2.0
-stravalib>=1.4.0
-aiohttp>=3.9.0
-python-dotenv>=1.0.0
-garmin-connect>=0.1.30
-tcxreader>=1.0.0
+SQLAlchemy>=2.0.0
