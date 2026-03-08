@@ -18,8 +18,8 @@ from lxml import etree
 import aiofiles
 import garth
 import httpx
-from config import FOLDER_DICT
-from garmin_device_adaptor import process_garmin_data
+from config.config import FOLDER_DICT
+from garmin.garmin_device_adaptor import process_garmin_data
 
 logger = logging.getLogger(__name__)
 

@@ -11,9 +11,9 @@ import eviltransform
 import gpxpy
 import polyline
 import requests
-from config import GPX_FOLDER, TCX_FOLDER, run_map, start_point
+from config.config import GPX_FOLDER, TCX_FOLDER, run_map, start_point
 from Crypto.Cipher import AES
-from utils import adjust_time
+from util.utils import adjust_time
 import xml.etree.ElementTree as ET
 
 KEEP_SPORT_TYPES = ["running", "hiking", "cycling"]
