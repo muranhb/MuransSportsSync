@@ -56,7 +56,7 @@ jobs:
 
           # 2. 运行主要的转换和上传任务
           echo "Starting Data Sync Route: Keep -> Garmin"
-          python keep_to_garmin_sync.py "$KEEP_PHONE" "$KEEP_PASSWORD" "$GARMIN_SECRET" $GARMIN_FLAG --sync-types running hiking cycling
+          python keep_to_garmin_sync.py "$KEEP_PHONE" "$KEEP_PASSWORD" "$GARMIN_SECRET" $GARMIN_FLAG --sync-types running hiking cycling training
 
       - name: Commit Sync State
         run: |

@@ -62,6 +62,9 @@ TYPE_DICT = {
     "AlpineSki": "Ski",  # strava
     "Ski": "Ski",
     "BackcountrySki": "BackcountrySki",
+    "training": "Training",
+    "others": "Training",
+    "Workout": "Training",
 }
 
 MAPPING_TYPE = [
@@ -77,6 +80,7 @@ MAPPING_TYPE = [
     "Snowboard",
     "Ski",
     "BackcountrySki",
+    "Training",
 ]
 
 STRAVA_GARMIN_TYPE_DICT = {
@@ -86,4 +90,5 @@ STRAVA_GARMIN_TYPE_DICT = {
     "VirtualRide": "VirtualRide",
     "Walk": "walking",
     "Swim": "swimming",
+    "Training": "training",
 }

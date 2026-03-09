@@ -16,13 +16,15 @@ from Crypto.Cipher import AES
 from util.utils import adjust_time
 import xml.etree.ElementTree as ET
 
-KEEP_SPORT_TYPES = ["running", "hiking", "cycling"]
+KEEP_SPORT_TYPES = ["running", "hiking", "cycling", "training"]
 KEEP2STRAVA = {
     "outdoorWalking": "Walk",
     "outdoorRunning": "Run",
     "outdoorCycling": "Ride",
     "indoorRunning": "VirtualRun",
     "mountaineering": "Hiking",
+    "others": "Workout",
+    "training": "Workout",
 }
 KEEP2TCX = {
     "outdoorWalking": "Walking",
@@ -30,6 +32,8 @@ KEEP2TCX = {
     "outdoorCycling": "Biking",
     "indoorRunning": "Running",
     "mountaineering": "Hiking",
+    "others": "Other",
+    "training": "Other",
 }
 
 # need to test
@@ -89,15 +93,12 @@ def get_single_run_data(session, headers, run_id, sport_type):
 
 
 def get_chart_data(session, headers, log_id, item_count=2000):
-    """
-        Fetch advanced chart data from Keep API (e.g., GCT, Vertical Oscillation, Power).
-    """
     try:
         r = session.get(
             GRAPH_API.format(log_id=log_id, item_count=item_count), headers=headers
         )
         if r.ok:
-            time.sleep(0.5)  # Rate limiting to prevent ban
+            time.sleep(0.5)
             return r.json()
         else:
             print(f"Failed to fetch chart data: HTTP {r.status_code}")
@@ -157,11 +158,8 @@ def find_nearest_val(data_list, target_time, start_time, val_key, threshold=100)
 
     if closest_element:
         val = closest_element.get(val_key)
-
-        # Fallback aliases for cadence
         if not val and val_key in ["stepFreq", "cadence"]:
             val = closest_element.get("value") or closest_element.get("stepsPerMinute") or closest_element.get("sr")
-        # Fallback for power
         elif not val and val_key == "power":
             val = closest_element.get("value")
 
@@ -173,6 +171,7 @@ def parse_raw_data_to_nametuple(
         run_data, old_gpx_ids, old_tcx_ids, with_gpx=False, with_tcx=False, session=None, headers=None
 ):
     run_data = run_data["data"]
+    run_points_data_gpx = []
     run_points_data = []
 
     full_log_id = run_data["id"]
@@ -182,24 +181,40 @@ def parse_raw_data_to_nametuple(
     elevation_gain = None
     decoded_hr_data = []
 
-    print(f"Processing Keep Activity ID: {keep_id}")
+    end_time_ms = run_data.get("endTime", start_time)
+    duration = run_data.get("duration")
+    if not duration:
+        duration = int((end_time_ms - start_time) // 1000)
+        run_data["duration"] = duration
 
-    # Fetch advanced dynamic chart metrics (e.g., specific to smartwatch sync)
+    distance = run_data.get("distance", 0.0)
+    run_data["distance"] = distance
+
+    calorie = run_data.get("calorie") or run_data.get("calories", 0)
+    run_data["calorie"] = calorie
+
+    data_type = run_data.get("dataType") or run_data.get("type") or "others"
+    if data_type not in KEEP2STRAVA:
+        data_type = "others"
+    run_data["dataType"] = data_type
+
+    if not duration or duration <= 0:
+        return None
+
     chart_metrics = {}
-    if session and headers:
+    if session and headers and run_data.get("geoPoints"):
         chart_data = get_chart_data(session, headers, full_log_id)
         if chart_data and "data" in chart_data:
             for metric_name, metric_data in chart_data["data"].items():
                 if isinstance(metric_data, list):
                     chart_metrics[metric_name] = {}
                     for point in metric_data:
-                        # Convert X-axis (seconds) to deciseconds for GPS alignment
                         rel_time_deci = int(point.get("x", 0) * 10)
                         value = (point["min"] + point["max"]) / 2 if "min" in point and "max" in point else point.get(
                             "y", 0)
                         chart_metrics[metric_name][rel_time_deci] = value
 
-    if run_data["heartRate"]:
+    if run_data.get("heartRate"):
         avg_heart_rate = run_data["heartRate"].get("averageHeartRate", None)
         heart_rate_data = run_data["heartRate"].get("heartRates", None)
         if heart_rate_data:
@@ -207,22 +222,19 @@ def parse_raw_data_to_nametuple(
         if avg_heart_rate and avg_heart_rate < 0:
             avg_heart_rate = None
 
-    # Fallback step data decryption for standard App usage
     step_raw_data = run_data.get("stepFrequencies") or run_data.get("stepPoints") or (
         run_data.get("step", {}).get("stepFreqs") if run_data.get("step") else None)
     decoded_step_data = []
     if step_raw_data:
         try:
             decoded_step_data = decode_runmap_data(step_raw_data)
-
-            # Dynamically calculate cadence (SPM) if only cumulative steps are provided (e.g., OPPO watches)
             prev_steps = 0
             prev_time = 0.0
             for item in decoded_step_data:
                 val = item.get("stepFreq") or item.get("value") or item.get("stepsPerMinute") or item.get("sr")
                 if not val and item.get("currentTotalSteps") is not None:
                     curr_steps = item.get("currentTotalSteps", 0)
-                    curr_time = item.get("currentTotalDuration", 0.0)  # 单位是秒
+                    curr_time = item.get("currentTotalDuration", 0.0)
                     if curr_time > prev_time:
                         spm = (curr_steps - prev_steps) / (curr_time - prev_time) * 60
                         item["sr"] = int(spm)
@@ -242,7 +254,7 @@ def parse_raw_data_to_nametuple(
         except Exception:
             pass
 
-    if run_data["geoPoints"]:
+    if run_data.get("geoPoints"):
         run_points_data = decode_runmap_data(run_data["geoPoints"], True)
         run_points_data_gpx = run_points_data
 
@@ -262,7 +274,6 @@ def parse_raw_data_to_nametuple(
             p_hr = find_nearest_hr(decoded_hr_data, int(p["timestamp"]), start_time)
             if p_hr: p["hr"] = p_hr
 
-            # Map fallback decoded data
             p_cadence = find_nearest_val(decoded_step_data, int(p["timestamp"]), start_time, "stepFreq")
             if p_cadence: p["cadence"] = p_cadence
 
@@ -275,7 +286,6 @@ def parse_raw_data_to_nametuple(
             p_power = find_nearest_val(decoded_power_data, int(p["timestamp"]), start_time, "power")
             if p_power: p["power"] = p_power
 
-            # Map advanced chart data (Overrides fallback data if exists)
             if chart_metrics:
                 if p["timestamp"] > 3_600_000:
                     rel_time_deci = int(p["timestamp"] - start_time // 100)
@@ -285,7 +295,6 @@ def parse_raw_data_to_nametuple(
                 for metric_name, metric_data in chart_metrics.items():
                     closest_time = None
                     min_diff = float("inf")
-                    # Allow a 15-second matching window
                     for chart_time in metric_data.keys():
                         diff = abs(chart_time - rel_time_deci)
                         if diff <= 150 and diff < min_diff:
@@ -294,9 +303,7 @@ def parse_raw_data_to_nametuple(
 
                     if closest_time is not None:
                         val = metric_data[closest_time]
-                        # 【关键修复】：严格过滤掉 Keep 用于占位的负数或 0 (比如 -10, -40)
                         if val is not None and val > 0:
-                            # 兼容不同设备的字段名，填入点位中
                             if metric_name in ["cadence", "踏频", "stepFreq"]:
                                 p["cadence"] = val
                             elif metric_name in ["power", "功率"]:
@@ -308,52 +315,56 @@ def parse_raw_data_to_nametuple(
                             elif metric_name in ["verticalOscillation", "垂直振幅", "vo"]:
                                 p["vo"] = val
 
-        if (run_data["dataType"].startswith("outdoor") or run_data["dataType"] == "mountaineering"):
+        if (data_type.startswith("outdoor") or data_type == "mountaineering"):
             if with_gpx:
                 gpx_data = parse_points_to_gpx(
-                    run_points_data_gpx, start_time, KEEP2STRAVA[run_data["dataType"]]
+                    run_points_data_gpx, start_time, KEEP2STRAVA[data_type]
                 )
                 elevation_gain = gpx_data.get_uphill_downhill().uphill
                 if str(keep_id) not in old_gpx_ids:
                     download_keep_gpx(gpx_data.to_xml(), str(keep_id))
             if with_tcx:
                 tcx_data = parse_points_to_tcx(
-                    run_data, run_points_data_gpx, KEEP2TCX[run_data["dataType"]]
+                    run_data, run_points_data_gpx, KEEP2TCX[data_type]
                 )
                 if str(keep_id) not in old_tcx_ids:
                     download_keep_tcx(tcx_data.toprettyxml(), str(keep_id))
     else:
         print(f"ID {keep_id} no gps data")
+        if with_tcx and data_type in ["others", "training", "indoorRunning", "Workout"]:
+            tcx_data = parse_points_to_tcx(
+                run_data, [], KEEP2TCX.get(data_type, "Other")
+            )
+            if str(keep_id) not in old_tcx_ids:
+                download_keep_tcx(tcx_data.toprettyxml(), str(keep_id))
 
     polyline_str = polyline.encode(run_points_data) if run_points_data else ""
     start_latlng = start_point(*run_points_data[0]) if run_points_data else None
+
     start_date = datetime.fromtimestamp(start_time // 1000, tz=timezone.utc)
     tz_name = run_data.get("timezone", "")
     start_date_local = adjust_time(start_date, tz_name)
-    end = datetime.fromtimestamp(run_data["endTime"] // 1000, tz=timezone.utc)
-    end_local = adjust_time(end, tz_name)
 
-    if not run_data["duration"]: return
+    end = datetime.fromtimestamp(end_time_ms // 1000, tz=timezone.utc)
+    end_local = adjust_time(end, tz_name)
 
     d = {
         "id": int(keep_id),
-        "name": f"{KEEP2STRAVA[run_data['dataType']]} from keep",
-        "type": f"{KEEP2STRAVA[(run_data['dataType'])]}",
-        "subtype": f"{KEEP2STRAVA[(run_data['dataType'])]}",
+        "name": f"{KEEP2STRAVA.get(data_type, 'Workout')} from keep",
+        "type": f"{KEEP2STRAVA.get(data_type, 'Workout')}",
+        "subtype": f"{KEEP2STRAVA.get(data_type, 'Workout')}",
         "start_date": datetime.strftime(start_date, "%Y-%m-%d %H:%M:%S"),
         "end": datetime.strftime(end, "%Y-%m-%d %H:%M:%S"),
         "start_date_local": datetime.strftime(start_date_local, "%Y-%m-%d %H:%M:%S"),
         "end_local": datetime.strftime(end_local, "%Y-%m-%d %H:%M:%S"),
-        "length": run_data["distance"],
+        "length": distance,
         "average_heartrate": int(avg_heart_rate) if avg_heart_rate else None,
         "map": run_map(polyline_str),
         "start_latlng": start_latlng,
-        "distance": run_data["distance"],
-        "moving_time": timedelta(seconds=run_data["duration"]),
-        "elapsed_time": timedelta(
-            seconds=int((run_data["endTime"] - run_data["startTime"]) // 1000)
-        ),
-        "average_speed": run_data["distance"] / run_data["duration"],
+        "distance": distance,
+        "moving_time": timedelta(seconds=duration),
+        "elapsed_time": timedelta(seconds=duration),
+        "average_speed": distance / duration if duration > 0 else 0,
         "elevation_gain": elevation_gain,
         "location_country": str(run_data.get("region", "")),
         "source": "Keep",
@@ -468,15 +479,15 @@ def parse_points_to_tcx(run_data, run_points_data, sport_type):
     activity.append(activity_lap)
 
     activity_total_time = ET.Element("TotalTimeSeconds")
-    activity_total_time.text = str(run_data.get("duration"))
+    activity_total_time.text = str(run_data.get("duration", 0))
     activity_lap.append(activity_total_time)
 
     activity_distance = ET.Element("DistanceMeters")
-    activity_distance.text = str(run_data.get("distance"))
+    activity_distance.text = str(run_data.get("distance", 0.0))
     activity_lap.append(activity_distance)
 
     activity_calories = ET.Element("Calories")
-    activity_calories.text = str(run_data.get("calorie"))
+    activity_calories.text = str(run_data.get("calorie", 0))
     activity_lap.append(activity_calories)
 
     track = ET.Element("Track")
@@ -519,54 +530,68 @@ def parse_points_to_tcx(run_data, run_points_data, sport_type):
 
         if point.get("cadence"):
             try:
-                cadence_node = ET.Element("Cadence")
-                cadence_node.text = str(int(point["cadence"]) // 2)
-                tp.append(cadence_node)
+                val = int(float(point["cadence"]))
+                if 50 <= val <= 260:
+                    cadence_node = ET.Element("Cadence")
+                    cadence_node.text = str(val // 2)
+                    tp.append(cadence_node)
             except Exception:
                 pass
 
-        # Write Running Dynamics to Garmin TCX Extensions
-        if point.get("power") or point.get("cadence") or point.get("sa") or point.get("gctd") or point.get(
-                "vo"):
+        if point.get("power") or point.get("cadence") or point.get("sa") or point.get("gctd") or point.get("vo"):
             try:
                 extensions = ET.Element("Extensions")
                 tpx = ET.Element("ns3:TPX")
 
                 if point.get("power"):
-                    watts = ET.Element("ns3:Watts")
-                    watts.text = str(int(point["power"]))
-                    tpx.append(watts)
+                    val = int(float(point["power"]))
+                    # 【阈值】跑步功率合理范围：1 ~ 1200 W
+                    if 0 < val <= 1200:
+                        watts = ET.Element("ns3:Watts")
+                        watts.text = str(val)
+                        tpx.append(watts)
 
                 if point.get("cadence"):
-                    run_cadence = ET.Element("ns3:RunCadence")
-                    run_cadence.text = str(int(point["cadence"]))
-                    tpx.append(run_cadence)
+                    val = int(float(point["cadence"]))
+                    # 【阈值】步频合理范围：50 ~ 250 SPM
+                    if 50 <= val <= 250:
+                        run_cadence = ET.Element("ns3:RunCadence")
+                        run_cadence.text = str(val)
+                        tpx.append(run_cadence)
 
                 if point.get("sa"):
-                    step_length = ET.Element("ns3:StepLength")
                     val = float(point["sa"])
-                    # Convert to millimeters (mm)
                     if val < 5:
-                        val = val * 1000  # e.g., 0.9m -> 900mm
+                        val = val * 1000
                     elif val < 300:
-                        val = val * 10  # e.g., 90cm -> 900mm
-                    step_length.text = str(int(val))
-                    tpx.append(step_length)
+                        val = val * 10
+                    # 【阈值】步幅合理范围：300 ~ 2500 mm (即 0.3米 ~ 2.5米。博尔特最长也才2.7米)
+                    if 300 <= val <= 2500:
+                        step_length = ET.Element("ns3:StepLength")
+                        step_length.text = str(int(val))
+                        tpx.append(step_length)
 
                 if point.get("gctd"):
-                    stance_time = ET.Element("ns3:StanceTime")
-                    stance_time.text = str(int(float(point["gctd"])))
-                    tpx.append(stance_time)
+                    val = float(point["gctd"])
+                    # 【阈值】触地时间合理范围：100 ~ 600 ms
+                    if 100 <= val <= 600:
+                        stance_time = ET.Element("ns3:StanceTime")
+                        stance_time.text = str(int(val))
+                        tpx.append(stance_time)
 
                 if point.get("vo"):
-                    vertical_oscillation = ET.Element("ns3:VerticalOscillation")
                     val = float(point["vo"])
-                    if val < 50: val = val * 10  # 如果是厘米(8.5cm) -> 85mm
-                    vertical_oscillation.text = str(int(val))
-                    tpx.append(vertical_oscillation)
+                    if val < 50:
+                        val = val * 10
+                    # 【阈值】垂直振幅合理范围：30 ~ 200 mm (3厘米 ~ 20厘米)
+                    if 30 <= val <= 200:
+                        vertical_oscillation = ET.Element("ns3:VerticalOscillation")
+                        vertical_oscillation.text = str(int(val))
+                        tpx.append(vertical_oscillation)
 
-                extensions.append(tpx)
-                tp.append(extensions)
+                if len(list(tpx)) > 0:
+                    extensions.append(tpx)
+                    tp.append(extensions)
             except Exception:
                 pass
 
@@ -605,7 +630,7 @@ if __name__ == "__main__":
         dest="sync_types",
         nargs="+",
         default=KEEP_SPORT_TYPES,
-        help="sync sport types from keep, default is running, you can choose from running, hiking, cycling",
+        help="sync sport types from keep",
     )
     parser.add_argument(
         "--with-gpx",
@@ -623,7 +648,7 @@ if __name__ == "__main__":
     for _tpye in options.sync_types:
         assert (
                 _tpye in KEEP_SPORT_TYPES
-        ), f"{_tpye} are not supported type, please make sure that the type entered in the {KEEP_SPORT_TYPES}"
+        ), f"{_tpye} are not supported type"
 
     old_tcx_ids = [i.split('.')[0] for i in os.listdir(TCX_FOLDER) if
                    not i.startswith('.')] if options.with_tcx and os.path.exists(TCX_FOLDER) else []

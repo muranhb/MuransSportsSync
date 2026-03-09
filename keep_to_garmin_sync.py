@@ -32,12 +32,12 @@ def run_keep_to_garmin_sync(email, password, keep_sports_data_api):
 
     new_tracks = []
     for track in _new_tracks:
-        if track.start_latlng is not None:
-            file_path = namedtuple("x", "tcx_file_path")(
-                os.path.join(TCX_FOLDER, str(track.id) + ".tcx")
-            )
+        expected_tcx = os.path.join(TCX_FOLDER, str(track.id) + ".tcx")
+        if track.start_latlng is not None or os.path.exists(expected_tcx):
+            file_path = namedtuple("x", "tcx_file_path")(expected_tcx)
         else:
             file_path = namedtuple("x", "tcx_file_path")(None)
+
         track = namedtuple("y", track._fields + file_path._fields)(*(track + file_path))
         new_tracks.append(track)
 
@@ -127,7 +127,7 @@ if __name__ == "__main__":
         "--sync-types",
         dest="sync_types",
         nargs="+",
-        default=["running", "hiking", "cycling"],
+        default=["running", "hiking", "cycling","training"],
         help="sync sport types from keep",
     )
     parser.add_argument("--is-cn", dest="is_cn", action="store_true", help="if garmin account is cn")
