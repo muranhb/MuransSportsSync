@@ -22,11 +22,9 @@ class TCX2FITConverter:
 
     def convert(self):
         try:
-            # 使用 tcxreader 解析 TCX 文件
             tcx = TCXReader().read(self.tcx_path, only_gps=False)
             builder = FitFileBuilder(auto_define=True, min_string_size=50)
 
-            # 动态推断运动类型
             sport_type = Sport.RUNNING
             sub_sport = SubSport.GENERIC
             if "Ride" in self.track_type or "Cycling" in self.track_type or tcx.activity_type == "Biking":
@@ -34,22 +32,18 @@ class TCX2FITConverter:
             elif "Hike" in self.track_type or "Walk" in self.track_type or tcx.activity_type == "Hiking":
                 sport_type = Sport.HIKING
 
-            # 提取所有带有时间的有效轨迹点
             points = []
             for lap in tcx.laps:
                 for tp in lap.trackpoints:
                     if tp.time:
                         points.append(tp)
 
-            if not points:
-                return False
+            if not points: return False
 
-            first_point = points[0]
-            last_point = points[-1]
-            start_time_ms = int(first_point.time.timestamp() * 1000)
-            end_time_ms = int(last_point.time.timestamp() * 1000)
+            start_time_ms = int(points[0].time.timestamp() * 1000)
+            end_time_ms = int(points[-1].time.timestamp() * 1000)
 
-            # 1. & 2. 写入 FileId 和 设备信息
+            # 1. Base Information
             message = FileIdMessage()
             message.type = FileType.ACTIVITY
             message.manufacturer = 1
@@ -67,7 +61,6 @@ class TCX2FITConverter:
             message.source_type = 5
             builder.add(message)
 
-            # 3. 开始事件
             message = EventMessage()
             message.event = Event.TIMER
             message.event_type = EventType.START
@@ -76,68 +69,158 @@ class TCX2FITConverter:
             message.timestamp = start_time_ms
             builder.add(message)
 
-            # 4. 记录点遍历
-            distance = 0.0
+            # Global & Lap Summary Initialization
+            LAP_DISTANCE_TARGET = 1000.0
+
+            total_distance = 0.0
             moving_time = 0.0
+            total_calories = sum([lap.calories for lap in tcx.laps if hasattr(lap, 'calories') and lap.calories])
+            total_ascent = 0.0
+
+            global_hrs, global_cads, global_powers = [], [], []
+
+            lap_start_time = points[0].time
+            lap_start_dist = 0.0
+            lap_moving_time = 0.0
+            lap_start_coord = None
+            lap_hrs, lap_cads, lap_powers = [], [], []
+            lap_ascent = 0.0
+
             prev_coordinate = None
             prev_time = None
-            total_calories = 0
+            prev_alt = None
 
-            for lap in tcx.laps:
-                # 累加卡路里 (TCX 中 Lap 包含卡路里)
-                if hasattr(lap, 'calories') and lap.calories:
-                    total_calories += lap.calories
+            # Iterate over points and construct FIT RecordMessage
+            for tp in points:
+                current_coord = (tp.latitude, tp.longitude) if tp.latitude and tp.longitude else None
+                current_time = tp.time
+                current_alt = tp.elevation if hasattr(tp, 'elevation') and tp.elevation is not None else None
 
-                for tp in lap.trackpoints:
-                    current_coordinate = None
-                    if tp.latitude is not None and tp.longitude is not None:
-                        current_coordinate = (tp.latitude, tp.longitude)
-                    current_time = tp.time
+                if prev_coordinate and current_coord and prev_time and current_time:
+                    delta = geodesic(prev_coordinate, current_coord).meters
+                    time_diff = (current_time - prev_time).total_seconds()
+                    if 0 < time_diff < 120:
+                        moving_time += time_diff
+                        lap_moving_time += time_diff
+                        if not hasattr(tp, 'distance') or tp.distance is None:
+                            total_distance += delta
 
-                    if prev_coordinate and current_coordinate and prev_time and current_time:
-                        delta = geodesic(prev_coordinate, current_coordinate).meters
-                        time_diff = (current_time - prev_time).total_seconds()
-                        if 0 < time_diff < 120:
-                            moving_time += time_diff
-                            # 如果 TCX 自带累计距离则用自带的，否则用计算的
-                            if not hasattr(tp, 'distance') or tp.distance is None:
-                                distance += delta
+                if hasattr(tp, 'distance') and tp.distance is not None:
+                    total_distance = tp.distance
 
-                    if hasattr(tp, 'distance') and tp.distance is not None:
-                        distance = tp.distance
+                if prev_alt is not None and current_alt is not None and current_alt > prev_alt:
+                    alt_diff = current_alt - prev_alt
+                    total_ascent += alt_diff
+                    lap_ascent += alt_diff
 
-                    message = RecordMessage()
-                    if current_coordinate:
-                        message.position_lat = tp.latitude
-                        message.position_long = tp.longitude
+                if not lap_start_coord and current_coord:
+                    lap_start_coord = current_coord
 
-                    message.distance = distance
-                    if hasattr(tp, 'elevation') and tp.elevation is not None:
-                        message.altitude = tp.elevation
-                    message.timestamp = int(tp.time.timestamp() * 1000)
+                message = RecordMessage()
+                if current_coord:
+                    message.position_lat = tp.latitude
+                    message.position_long = tp.longitude
+                message.distance = total_distance
+                if current_alt is not None:
+                    message.altitude = current_alt
+                message.timestamp = int(tp.time.timestamp() * 1000)
 
-                    # 提取心率
-                    if hasattr(tp, 'hr_value') and tp.hr_value is not None:
-                        message.heart_rate = int(tp.hr_value)
+                # Defensive limitation: limit HR & Cadence to 255 (FIT spec for uint8)
+                if hasattr(tp, 'hr_value') and tp.hr_value is not None:
+                    hr = int(tp.hr_value)
+                    hr = min(hr, 255)
+                    message.heart_rate = hr
+                    global_hrs.append(hr)
+                    lap_hrs.append(hr)
 
-                    # 提取步频/踏频 (TCX 原生支持 Cadence)
-                    if hasattr(tp, 'cadence') and tp.cadence is not None:
-                        message.cadence = int(tp.cadence)
+                if hasattr(tp, 'cadence') and tp.cadence is not None:
+                    raw_cadence = float(tp.cadence)
+                    raw_cadence = min(raw_cadence, 255.0)
+                    spm = int(raw_cadence) * 2
+                    message.cadence = int(raw_cadence)
+                    global_cads.append(spm)
+                    lap_cads.append(spm)
 
-                    # 如果存在功率数据 (骑行)
-                    if hasattr(tp, 'tpx_ext') and tp.tpx_ext and tp.tpx_ext.get('Watts'):
-                        message.power = int(tp.tpx_ext.get('Watts'))
+                # Map advanced running dynamics from TPX extensions
+                if hasattr(tp, 'tpx_ext') and tp.tpx_ext:
+                    if tp.tpx_ext.get('Watts'):
+                        try:
+                            pwr = int(float(tp.tpx_ext.get('Watts')))
+                            message.power = pwr
+                            global_powers.append(pwr)
+                            lap_powers.append(pwr)
+                        except Exception:
+                            pass
 
-                    builder.add(message)
+                    if tp.tpx_ext.get('StepLength'):
+                        try:
+                            val = float(tp.tpx_ext.get('StepLength'))
+                            if val > 0: message.step_length = val
+                        except Exception:
+                            pass
 
-                    if current_coordinate:
-                        prev_coordinate = current_coordinate
-                    if current_time:
-                        prev_time = current_time
+                    if tp.tpx_ext.get('StanceTime'):
+                        try:
+                            val = float(tp.tpx_ext.get('StanceTime'))
+                            if val > 0: message.stance_time = val
+                        except Exception:
+                            pass
 
-            total_elapsed_time = (last_point.time - first_point.time).total_seconds()
+                    if tp.tpx_ext.get('VerticalOscillation'):
+                        try:
+                            val = float(tp.tpx_ext.get('VerticalOscillation'))
+                            if val > 0: message.vertical_oscillation = val
+                        except Exception:
+                            pass
 
-            # 5. 结束事件
+                builder.add(message)
+
+                # Split Lap every 1KM
+                is_last_point = (tp == points[-1])
+                lap_current_dist = total_distance - lap_start_dist
+
+                if lap_current_dist >= LAP_DISTANCE_TARGET or is_last_point:
+                    lap_msg = LapMessage()
+                    lap_msg.timestamp = int(tp.time.timestamp() * 1000)
+                    lap_msg.start_time = int(lap_start_time.timestamp() * 1000)
+                    lap_msg.total_elapsed_time = (tp.time - lap_start_time).total_seconds()
+                    lap_msg.total_timer_time = lap_moving_time
+                    lap_msg.total_distance = lap_current_dist
+                    lap_msg.total_ascent = int(lap_ascent)
+
+                    if lap_start_coord:
+                        lap_msg.start_position_lat = lap_start_coord[0]
+                        lap_msg.start_position_long = lap_start_coord[1]
+                    if current_coord:
+                        lap_msg.end_position_lat = current_coord[0]
+                        lap_msg.end_position_long = current_coord[1]
+
+                    if lap_hrs:
+                        lap_msg.avg_heart_rate = min(int(sum(lap_hrs) / len(lap_hrs)), 255)
+                        lap_msg.max_heart_rate = min(max(lap_hrs), 255)
+                    if lap_cads:
+                        lap_msg.avg_cadence = min(int(sum(lap_cads) / len(lap_cads) / 2), 255)
+                        lap_msg.max_cadence = min(int(max(lap_cads) / 2), 255)
+                    if lap_powers:
+                        lap_msg.avg_power = int(sum(lap_powers) / len(lap_powers))
+                        lap_msg.max_power = max(lap_powers)
+
+                    lap_msg.sport = sport_type
+                    lap_msg.sub_sport = sub_sport
+                    builder.add(lap_msg)
+
+                    # 重置 Lap 变量，准备下一公里
+                    lap_start_time = tp.time
+                    lap_start_dist = total_distance
+                    lap_moving_time = 0.0
+                    lap_start_coord = current_coord
+                    lap_hrs, lap_cads, lap_powers = [], [], []
+                    lap_ascent = 0.0
+
+                if current_coord: prev_coordinate = current_coord
+                if current_time: prev_time = current_time
+                if current_alt is not None: prev_alt = current_alt
+
             message = EventMessage()
             message.event = Event.TIMER
             message.event_type = EventType.STOP_ALL
@@ -146,48 +229,42 @@ class TCX2FITConverter:
             message.timestamp = end_time_ms
             builder.add(message)
 
-            # 6. Lap 信息
-            message = LapMessage()
-            message.timestamp = end_time_ms
-            message.start_time = start_time_ms
-            message.total_elapsed_time = total_elapsed_time
-            message.total_timer_time = moving_time
-            if points[0].latitude:
-                message.start_position_lat = points[0].latitude
-                message.start_position_long = points[0].longitude
-            if points[-1].latitude:
-                message.end_position_lat = points[-1].latitude
-                message.end_position_long = points[-1].longitude
-            message.total_distance = distance
-            if total_calories > 0:
-                message.total_calories = int(total_calories)
-            message.sport = sport_type
-            message.sub_sport = sub_sport
-            builder.add(message)
-
-            # 7. Session 信息
+            # Global Session Summary
             message = SessionMessage()
             message.timestamp = end_time_ms
             message.start_time = start_time_ms
-            message.total_elapsed_time = total_elapsed_time
+            message.total_elapsed_time = (points[-1].time - points[0].time).total_seconds()
             message.total_timer_time = moving_time
+            message.total_distance = total_distance
+            message.total_ascent = int(total_ascent)
+
+            if global_hrs:
+                message.avg_heart_rate = min(int(sum(global_hrs) / len(global_hrs)), 255)
+                message.max_heart_rate = min(max(global_hrs), 255)
+                message.min_heart_rate = min(min(global_hrs), 255)
+
+            if global_cads:
+                message.avg_cadence = min(int(sum(global_cads) / len(global_cads) / 2), 255)
+                message.max_cadence = min(int(max(global_cads) / 2), 255)
+
+            if global_powers:
+                message.avg_power = int(sum(global_powers) / len(global_powers))
+                message.max_power = max(global_powers)
+
+            if total_calories > 0:
+                message.total_calories = int(total_calories)
+
             if points[0].latitude:
                 message.start_position_lat = points[0].latitude
                 message.start_position_long = points[0].longitude
+
             message.sport = sport_type
             message.sub_sport = sub_sport
-            message.first_lap_index = 0
-            message.num_laps = 1
             message.trigger = SessionTrigger.ACTIVITY_END
             message.event = Event.SESSION
             message.event_type = EventType.STOP
-            message.total_distance = distance
-            # 【关键】将汇总的卡路里写入 Session，这是佳明识别总消耗的关键！
-            if total_calories > 0:
-                message.total_calories = int(total_calories)
             builder.add(message)
 
-            # 8. Activity 汇总信息
             message = ActivityMessage()
             message.timestamp = end_time_ms
             message.total_timer_time = moving_time
@@ -203,7 +280,5 @@ class TCX2FITConverter:
             return True
 
         except Exception as e:
-            import traceback
-            traceback.print_exc()
             print(f"TCX2FIT Conversion Error: {str(e)}")
             return False

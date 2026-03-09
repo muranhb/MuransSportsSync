@@ -36,6 +36,8 @@ jobs:
           GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
           GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
           GARMIN_IS_CN: ${{ secrets.GARMIN_IS_CN }} # 配置为 true 或 false
+          GARMIN_MANUFACTURER: ${{ secrets.GARMIN_MANUFACTURER || '1' }}
+          GARMIN_PRODUCT_ID: ${{ secrets.GARMIN_PRODUCT_ID || '3992' }}
         run: |
           # 1. 使用官方凭证脚本获取最新的 Secret，规避 Token 过期
           echo "Authenticating with Garmin..."

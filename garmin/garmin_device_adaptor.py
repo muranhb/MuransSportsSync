@@ -1,3 +1,4 @@
+import os
 import traceback
 from io import BytesIO
 
@@ -11,13 +12,17 @@ try:
 except ImportError:
     FIT_TOOL_AVAILABLE = False
 
-# the device manufacturer and product info can be found in github,
+# =========================================================================
+# Customize Garmin Device Profile
+# Default is set to Garmin Forerunner 955 (ID: 3992)
+# This is crucial for unlocking advanced Running Dynamics charts in Garmin Connect.
 # https://github.com/garmin/fit-python-sdk/blob/main/garmin_fit_sdk/profile.py
-MANUFACTURER = 1  # Garmin
-GARMIN_DEVICE_PRODUCT_ID = 3415  # Forerunner 245
+# =========================================================================
+MANUFACTURER = int(os.getenv("GARMIN_MANUFACTURER", 1))  # Garmin
+GARMIN_DEVICE_PRODUCT_ID = int(os.getenv("GARMIN_PRODUCT_ID", 3992))
 GARMIN_SOFTWARE_VERSION = 3.58
-# The device serial number must be real Garmin will identify device with it
-# here the default number:1234567890 Garmin will recognize it as Forerunner 245
+
+# The device serial number must be real, otherwise Garmin will not identify it properly.
 GARMIN_DEVICE_SERIAL_NUMBER = 1234567890
 
 
