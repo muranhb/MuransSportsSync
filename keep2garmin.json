@@ -1984,5 +1984,11 @@
     "name": "Ride from keep",
     "type": "Ride",
     "tcx_file_path": "/home/runner/work/MuransSportsSync/MuransSportsSync/outputs/TCX_OUT/9223370252569078807.tcx"
+  },
+  {
+    "run_id": 9223370249713255807,
+    "name": "Run from keep",
+    "type": "Run",
+    "tcx_file_path": "/home/runner/work/MuransSportsSync/MuransSportsSync/outputs/TCX_OUT/9223370249713255807.tcx"
   }
 ]
