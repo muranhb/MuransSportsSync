@@ -2014,5 +2014,11 @@
     "name": "Run from keep",
     "type": "Run",
     "tcx_file_path": "/home/runner/work/MuransSportsSync/MuransSportsSync/outputs/TCX_OUT/9223370249275680807.tcx"
+  },
+  {
+    "run_id": 9223370249275005182,
+    "name": "Workout from keep",
+    "type": "Workout",
+    "tcx_file_path": "/home/runner/work/MuransSportsSync/MuransSportsSync/outputs/TCX_OUT/9223370249275005182.tcx"
   }
 ]
