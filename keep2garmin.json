@@ -2020,5 +2020,11 @@
     "name": "Workout from keep",
     "type": "Workout",
     "tcx_file_path": "/home/runner/work/MuransSportsSync/MuransSportsSync/outputs/TCX_OUT/9223370249275005182.tcx"
+  },
+  {
+    "run_id": 9223370248939317807,
+    "name": "Ride from keep",
+    "type": "Ride",
+    "tcx_file_path": "/home/runner/work/MuransSportsSync/MuransSportsSync/outputs/TCX_OUT/9223370248939317807.tcx"
   }
 ]
