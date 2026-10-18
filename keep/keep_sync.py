@@ -48,16 +48,75 @@ TRANS_GCJ02_TO_WGS84 = True
 
 
 def login(session, mobile, password):
+    if not mobile or not password:
+        raise RuntimeError(
+            "Keep 登录失败：手机号或密码为空，请检查 GitHub Secrets。"
+        )
+
     headers = {
-        "User-Agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:78.0) Gecko/20100101 Firefox/78.0",
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; "
+            "rv:78.0) Gecko/20100101 Firefox/78.0"
+        ),
         "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
     }
-    data = {"mobile": mobile, "password": password}
-    r = session.post(LOGIN_API, headers=headers, data=data)
-    if r.ok:
-        token = r.json()["data"]["token"]
-        headers["Authorization"] = f"Bearer {token}"
-        return session, headers
+
+    data = {
+        "mobile": mobile,
+        "password": password,
+    }
+
+    try:
+        r = session.post(
+            LOGIN_API,
+            headers=headers,
+            data=data,
+            timeout=30,
+        )
+    except requests.RequestException as e:
+        raise RuntimeError(
+            f"Keep 登录请求失败：{type(e).__name__}"
+        ) from e
+
+    print(f"[Keep Login] HTTP 状态码：{r.status_code}")
+
+    try:
+        result = r.json()
+    except ValueError:
+        raise RuntimeError(
+            f"Keep 登录返回非 JSON 内容，HTTP {r.status_code}"
+        )
+
+    if not isinstance(result, dict):
+        raise RuntimeError("Keep 登录响应格式异常")
+
+    if not r.ok or result.get("ok") is False:
+        error_code = result.get("code", "unknown")
+        error_message = (
+            result.get("text")
+            or result.get("message")
+            or "无详细错误说明"
+        )
+
+        raise RuntimeError(
+            f"Keep 登录失败！HTTP {r.status_code}，"
+            f"错误码：{error_code}，"
+            f"错误信息：{str(error_message)[:150]}"
+        )
+
+    token = (result.get("data") or {}).get("token")
+
+    if not token:
+        raise RuntimeError(
+            "Keep 登录响应缺少 Token，"
+            "可能是密码错误、需要额外验证或接口发生变化。"
+        )
+
+    headers["Authorization"] = f"Bearer {token}"
+
+    print("[Keep Login] 登录成功，已获取 Token")
+
+    return session, headers
 
 
 def get_to_download_runs_ids(session, headers, sport_type):
