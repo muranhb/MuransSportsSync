@@ -2242,5 +2242,23 @@
     "name": "Workout from keep",
     "type": "Workout",
     "tcx_file_path": "/home/runner/work/MuransSportsSync/MuransSportsSync/outputs/TCX_OUT/9223370243663354658.tcx"
+  },
+  {
+    "run_id": 9223370243316033807,
+    "name": "Run from keep",
+    "type": "Run",
+    "tcx_file_path": "/home/runner/work/MuransSportsSync/MuransSportsSync/outputs/TCX_OUT/9223370243316033807.tcx"
+  },
+  {
+    "run_id": 9223370243315371399,
+    "name": "Workout from keep",
+    "type": "Workout",
+    "tcx_file_path": "/home/runner/work/MuransSportsSync/MuransSportsSync/outputs/TCX_OUT/9223370243315371399.tcx"
+  },
+  {
+    "run_id": 9223370243317448707,
+    "name": "Workout from keep",
+    "type": "Workout",
+    "tcx_file_path": "/home/runner/work/MuransSportsSync/MuransSportsSync/outputs/TCX_OUT/9223370243317448707.tcx"
   }
 ]
