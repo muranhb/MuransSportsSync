@@ -2308,5 +2308,17 @@
     "name": "Ride from keep",
     "type": "Ride",
     "tcx_file_path": "/home/runner/work/MuransSportsSync/MuransSportsSync/outputs/TCX_OUT/9223370243006468807.tcx"
+  },
+  {
+    "run_id": 9223370242711322807,
+    "name": "Run from keep",
+    "type": "Run",
+    "tcx_file_path": "/home/runner/work/MuransSportsSync/MuransSportsSync/outputs/TCX_OUT/9223370242711322807.tcx"
+  },
+  {
+    "run_id": 9223370242710255461,
+    "name": "Workout from keep",
+    "type": "Workout",
+    "tcx_file_path": "/home/runner/work/MuransSportsSync/MuransSportsSync/outputs/TCX_OUT/9223370242710255461.tcx"
   }
 ]
